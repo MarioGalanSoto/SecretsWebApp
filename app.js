@@ -16,8 +16,6 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 //facebook auth
 const FacebookStrategy = require('passport-facebook').Strategy;
 
-
-
 const app= express();
 
 app.use(express.static("public"));
@@ -40,13 +38,13 @@ app.use(passport.session());
 
 mongoose.connect("mongodb://localhost:27017/userDB", {useNewUrlParser:true});
 
-
 //Schema has to be mongoose schema for sessions and security measures
 const userSchema= new mongoose.Schema({
   email:String,
   password:String,
   googleId:String,
-  facebookId:String
+  facebookId:String,
+  secret:String
 });
 
 userSchema.plugin(passportLocalMongoose); // add plugin to hash and salt passwords
@@ -60,7 +58,7 @@ const User = new mongoose.model("User", userSchema);
 passport.use(User.createStrategy());
 
 passport.serializeUser(function(user,done){
-  console.log(user);
+  // console.log(user);
   done(null, user);
 });//save user info in the cookie
 
@@ -88,7 +86,6 @@ passport.use(new GoogleStrategy({
     callbackURL: "http://localhost:3000/auth/google/secrets",
     userProfileURL:"https://www.googleapis.com/oauth2/v3/userinfo"
   },
-
   function(accessToken, refreshToken, profile, cb) {
     // console.log(profile);
     User.findOrCreate({googleId: profile.id}, function (err, user) {
@@ -106,7 +103,7 @@ passport.use(new FacebookStrategy({
 },
 
 function(accessToken, refreshToken,profile,cb){
-  console.log(profile)
+  // console.log(profile)
   User.findOrCreate({
       facebookId: profile.id,
     }, function(err, user) {
@@ -118,11 +115,6 @@ function(accessToken, refreshToken,profile,cb){
 app.get("/", function(req,res){
   res.render("home");
 });
-
-// app.get("/auth/google", function(req, res){
-//   passport.authenticate('google', {scope:["profile"]});
-// });
-
 
 app.get('/auth/facebook',
   passport.authenticate('facebook'));
@@ -155,12 +147,47 @@ app.get("/register", function(req,res){
 });
 
 app.get("/secrets", function(req, res){
+  //check which users have a secret, where the secret field is not equal (ne) to null, meaning that has a secret
+  try {
+    User.find({"secret": {$ne:null}}).then(function(foundUsers){
+      if(foundUsers){
+        res.render("secrets", {userWithSecrets: foundUsers});
+      }
+    });
+  } catch (e) {
+    console.log("could not load secrets: "+e);
+  } finally {
+
+  }
+
+});
+
+
+app.get("/submit",function(req,res){
   if(req.isAuthenticated()){
-    res.render("secrets");
+    res.render("submit");
   }
   else{
     res.redirect("/login");
   }
+});
+
+app.post("/submit", function(req,res){
+  const submittedSecret = req.body.secret;
+  try {
+    User.findById(req.user._id).then(function(foundUser){
+      // console.log(foundUser);
+      if(foundUser){
+        foundUser.secret = submittedSecret;
+        foundUser.save();
+      }
+    });
+  } catch (e) {
+    console.log("Could not summit secret: "+e);
+  } finally {
+    res.redirect("/secrets");
+  }
+
 });
 
 app.post("/register", function(req, res){
